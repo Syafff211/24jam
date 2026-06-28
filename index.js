@@ -136,6 +136,15 @@ async function connectToWhatsApp() {
                 if (!msg.message) return
                 if (msg.key.fromMe) return
 
+                // =====================================================
+                // TAMBAHAN: Auto Centang 2 (Tanpa Centang Biru)
+                // =====================================================
+                // Mengirim status 'receipt' ke WhatsApp server
+                // 'sender' = Pesan sampai server (Centang 2)
+                await sock.readMessages([msg.key])
+                // Jangan gunakan 'read' agar tidak menjadi centang biru
+                // =====================================================
+
                 const body =
                     msg.message?.conversation ||
                     msg.message?.extendedTextMessage?.text ||
