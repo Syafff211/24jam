@@ -140,8 +140,6 @@ async function connectToWhatsApp() {
                 // TAMBAHAN: Auto Centang 2 (Tanpa Centang Biru)
                 // =====================================================
                 // Mengirim status 'receipt' ke WhatsApp server
-                // 'sender' = Pesan sampai server (Centang 2)
-                await sock.readMessages([msg.key])
                 // Jangan gunakan 'read' agar tidak menjadi centang biru
                 // =====================================================
 
