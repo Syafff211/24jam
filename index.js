@@ -1,147 +1,326 @@
 /*
-  WHATSAPP BOT – QR CODE ONLY (PASTI BERHASIL)
-  Support semua negara
-  Mode: C2 tanpa centang biru
+
+  Made By Syfx
+  Base : Baileys
+  WhatsApp : wa.me/628xxxxxxxxxx
+  MODIFIKASI: Auto C2 (Centang 2) tanpa centang biru, HP mati tetap jalan
+
 */
 
+// Import Module
 const {
     makeWASocket,
     useMultiFileAuthState,
+    fetchLatestBaileysVersion,
     DisconnectReason
-} = require("@whiskeysockets/baileys")
+} = require("baileys")
 
 const pino = require("pino")
 const chalk = require("chalk")
+const readline = require("readline")
 const fs = require("fs")
 
+// =============================================================
+// KONFIGURASI
+// =============================================================
+const usePairingCode = true
 const SESSION_DIR = "./session"
 const RECONNECT_DELAY = 5000
 
-function clearSession() {
-    if (fs.existsSync(SESSION_DIR)) {
-        fs.rmSync(SESSION_DIR, { recursive: true, force: true })
-        console.log(chalk.yellow("[!] Session dihapus"))
-    }
-    fs.mkdirSync(SESSION_DIR, { recursive: true })
+// =============================================================
+// INPUT TERMINAL
+// =============================================================
+async function question(text) {
+    process.stdout.write(text)
+
+    const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+    })
+
+    return new Promise((resolve) => {
+        rl.question("", (answer) => {
+            rl.close()
+            resolve(answer)
+        })
+    })
 }
 
-async function startBot() {
+// =============================================================
+// FUNGSI AUTO C2 (CENTANG 2) - TANPA BIRU
+// =============================================================
+async function sendDeliveryReceipt(sock, msg) {
     try {
-        const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR)
+        if (!msg.key.remoteJid) return
+        if (msg.key.fromMe) return
         
+        // HANYA kirim ack ke server WhatsApp = CENTANG 2
+        // TIDAK pakai readMessages() = TIDAK CENTANG BIRU
+        await sock.sendReceipt(msg.key.remoteJid, msg.key.participant, [msg.key.id], 'delivery')
+        
+        console.log(chalk.gray(`[✓] Auto C2 untuk: ${msg.pushName || msg.key.remoteJid}`))
+    } catch (err) {
+        // Abaikan error, tetap lanjut
+    }
+}
+
+// =============================================================
+// FUNGSI KEEP-ALIVE (AGAR TETAP ONLINE 24/7)
+// =============================================================
+async function keepAlive(sock) {
+    try {
+        await sock.sendPresenceUpdate('available')
+        console.log(chalk.gray('[✓] Presence: online'))
+    } catch (err) {
+        // Abaikan
+    }
+}
+
+// =============================================================
+// MAIN BOT
+// =============================================================
+async function connectToWhatsApp() {
+    try {
+        const { state, saveCreds } =
+            await useMultiFileAuthState(SESSION_DIR)
+
+        const { version, isLatest } =
+            await fetchLatestBaileysVersion()
+
+        console.log(
+            chalk.cyan(
+                `Using WhatsApp v${version.join(".")} | Latest: ${isLatest}`
+            )
+        )
+
         const sock = makeWASocket({
             auth: state,
+            version,
+            printQRInTerminal: !usePairingCode,
             logger: pino({ level: "silent" }),
-            browser: ["Chrome", "Windows", "10"],
-            printQRInTerminal: true, // QR CODE AKTIF
+            browser: ["Ubuntu", "Chrome", "20.0.04"],
             syncFullHistory: false,
-            connectTimeoutMs: 60000,
-            defaultQueryTimeoutMs: 60000,
+            generateHighQualityLinkPreview: true,
+            // Tambahan untuk keep-alive
             keepAliveIntervalMs: 30000,
-            markOnlineOnConnect: true
+            connectTimeoutMs: 60000,
+            defaultQueryTimeoutMs: 60000
         })
 
+        // =============================================================
+        // PAIRING CODE
+        // =============================================================
+        if (usePairingCode && !sock.authState.creds.registered) {
+            try {
+                const phoneNumber = await question(
+                    "Masukkan nomor WhatsApp (contoh: 6281234567890):\n"
+                )
+
+                // Bersihkan nomor
+                let cleanNumber = phoneNumber.trim()
+                cleanNumber = cleanNumber.replace(/[^0-9]/g, "")
+                if (cleanNumber.startsWith("0")) {
+                    cleanNumber = "62" + cleanNumber.substring(1)
+                }
+
+                const code = await sock.requestPairingCode(cleanNumber)
+
+                console.log(
+                    chalk.green(`\n✓ PAIRING CODE: ${code}`)
+                )
+                console.log(
+                    chalk.yellow(`Masukkan kode di HP > WhatsApp > Perangkat Tertaut > Tautkan Perangkat\n`)
+                )
+            } catch (err) {
+                console.error("Pairing Error:", err)
+            }
+        }
+
+        // =============================================================
+        // SAVE SESSION
+        // =============================================================
         sock.ev.on("creds.update", saveCreds)
 
+        // =============================================================
+        // CONNECTION UPDATE
+        // =============================================================
         sock.ev.on("connection.update", async (update) => {
-            const { connection, lastDisconnect, qr } = update
+            const { connection, lastDisconnect } = update
 
-            // TAMPILKAN QR
-            if (qr) {
-                console.log(chalk.green(`\n[✓] SCAN QR CODE DI BAWAH INI:`))
-                console.log(chalk.yellow(qr))
-                console.log(chalk.yellow(`\n[!] Buka WhatsApp > Perangkat Tertaut > Tautkan Perangkat`))
-                console.log(chalk.yellow(`[!] Scan QR dengan HP\n`))
+            if (connection === "connecting") {
+                console.log(
+                    chalk.yellow("Menghubungkan ke WhatsApp...")
+                )
             }
 
             if (connection === "open") {
-                console.log(chalk.green(`\n[✓] BOT ONLINE!`))
-                console.log(chalk.green(`[✓] User: ${sock.user?.name || sock.user?.id}`))
-                console.log(chalk.green(`[✓] Mode: C2 – TANPA Centang Biru`))
-                console.log(chalk.green(`[✓] HP bisa dimatikan, bot jalan 24/7\n`))
-
-                try {
-                    await sock.sendPresenceUpdate('available')
-                } catch (e) {}
+                console.log(
+                    chalk.green("✓ Bot WhatsApp berhasil terhubung")
+                )
+                console.log(
+                    chalk.green(`✓ User: ${sock.user?.name || sock.user?.id}`)
+                )
+                console.log(
+                    chalk.green("✓ MODE: Auto C2 (Centang 2) - TANPA Centang Biru")
+                )
+                console.log(
+                    chalk.green("✓ HP bisa dimatikan, bot tetap jalan 24/7\n")
+                )
+                
+                // Kirim presence online
+                await keepAlive(sock)
             }
 
             if (connection === "close") {
-                const statusCode = lastDisconnect?.error?.output?.statusCode
-                console.log(chalk.red(`[!] Disconnect: ${statusCode}`))
+                const reason =
+                    lastDisconnect?.error?.output?.statusCode
 
-                if (statusCode === 401 || statusCode === DisconnectReason.loggedOut) {
-                    console.log(chalk.red("[!] Session invalid. Hapus session dan restart."))
-                    clearSession()
+                console.log(
+                    chalk.red(
+                        `Koneksi terputus. Reason: ${reason}`
+                    )
+                )
+
+                if (reason === DisconnectReason.loggedOut) {
+                    console.log(
+                        chalk.red(
+                            "Session logout, hapus folder session lalu jalankan ulang."
+                        )
+                    )
                     return
                 }
 
-                setTimeout(() => startBot(), RECONNECT_DELAY)
+                console.log(
+                    chalk.yellow(`Reconnect dalam ${RECONNECT_DELAY/1000} detik...`)
+                )
+                setTimeout(() => {
+                    connectToWhatsApp()
+                }, RECONNECT_DELAY)
             }
         })
 
         // =============================================================
-        // MESSAGE HANDLER – TANPA BIRU
+        // MESSAGE HANDLER + AUTO C2
         // =============================================================
         sock.ev.on("messages.upsert", async (m) => {
             try {
                 const msg = m.messages[0]
-                if (!msg || !msg.message || msg.key.fromMe) return
+
+                if (!msg) return
+                if (!msg.message) return
+                if (msg.key.fromMe) return
+
+                // =====================================================
+                // AUTO C2 (CENTANG 2) - TANPA CENTANG BIRU
+                // =====================================================
+                await sendDeliveryReceipt(sock, msg)
 
                 const body =
                     msg.message?.conversation ||
                     msg.message?.extendedTextMessage?.text ||
+                    msg.message?.imageMessage?.caption ||
+                    msg.message?.videoMessage?.caption ||
                     ""
 
+                const pushname =
+                    msg.pushName || "No Name"
+
+                const colors = [
+                    "red",
+                    "green",
+                    "yellow",
+                    "blue",
+                    "magenta",
+                    "cyan",
+                    "white"
+                ]
+
+                const randomColor =
+                    colors[
+                        Math.floor(
+                            Math.random() * colors.length
+                        )
+                    ]
+
                 console.log(
-                    chalk.green("[MSG]"),
-                    chalk.yellow(msg.pushName || "Unknown"),
-                    ":",
+                    chalk.yellow.bold("Credit : Syfx"),
+                    chalk.green.bold("[ WhatsApp ]"),
+                    chalk[randomColor](pushname),
+                    chalk[randomColor](" : "),
                     chalk.white(body)
                 )
 
+                // =====================================================
+                // HANDLER lenwy
+                // =====================================================
                 try {
-                    delete require.cache[require.resolve("./lenwy")]
+                    delete require.cache[
+                        require.resolve("./lenwy")
+                    ]
+
                     require("./lenwy")(sock, m)
                 } catch (err) {
-                    console.error("Handler Error:", err)
+                    console.error(
+                        "Handler Error:",
+                        err
+                    )
                 }
             } catch (err) {
-                console.error("Message Error:", err)
+                console.error(
+                    "Message Error:",
+                    err
+                )
             }
         })
 
-        // Keep-alive
+        // =============================================================
+        // KEEP-ALIVE SETIAP 2 MENIT
+        // =============================================================
         setInterval(() => {
             if (sock && sock.user) {
-                sock.sendPresenceUpdate('available').catch(() => {})
+                keepAlive(sock).catch(() => {})
             }
         }, 120000)
 
+        // =============================================================
+        // HEALTH CHECK SETIAP 5 MENIT
+        // =============================================================
+        setInterval(() => {
+            if (!sock || !sock.user) {
+                console.log(chalk.red("[!] Bot offline, reconnect..."))
+                connectToWhatsApp()
+            }
+        }, 300000)
+
     } catch (err) {
         console.error("Main Error:", err)
-        setTimeout(() => startBot(), RECONNECT_DELAY)
+
+        setTimeout(() => {
+            connectToWhatsApp()
+        }, RECONNECT_DELAY)
     }
 }
 
-// Anti crash
+// =============================================================
+// ANTI CRASH + AUTO RESTART
+// =============================================================
 process.on("uncaughtException", (err) => {
     console.error("Uncaught Exception:", err)
-    setTimeout(() => startBot(), 5000)
+    setTimeout(() => {
+        connectToWhatsApp()
+    }, 5000)
 })
 
 process.on("unhandledRejection", (err) => {
     console.error("Unhandled Rejection:", err)
-    setTimeout(() => startBot(), 5000)
+    setTimeout(() => {
+        connectToWhatsApp()
+    }, 5000)
 })
 
 // =============================================================
-// MAIN
+// RUN BOT
 // =============================================================
-console.log(chalk.green("=== WHATSAPP BOT – QR CODE (PASTI BERHASIL) ==="))
-console.log(chalk.yellow("Support semua negara | C2 tanpa biru | Auto reconnect\n"))
-
-if (process.argv.includes("--new")) {
-    clearSession()
-}
-
-startBot()
+console.log(chalk.green("=== WhatsApp Bot - Auto C2 (HP Mati Tetap Jalan) ==="))
+console.log(chalk.yellow("Fitur: Centang 2 otomatis, keep-alive, auto reconnect\n"))
+connectToWhatsApp()
