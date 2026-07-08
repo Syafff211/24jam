@@ -1,7 +1,6 @@
 /*
-  Made By Syfx (Fixed by Colin)
-  Base : Baileys
-  Mode: C2 (Centang 2) - TANPA Centang Biru
+  PAIRING CODE ONLY – NO QR, NO BLUE TICK
+  Untuk desa – 100% pairing code
 */
 
 const {
@@ -19,6 +18,7 @@ const fs = require("fs")
 const SESSION_DIR = "./session"
 const RECONNECT_DELAY = 5000
 
+// Input nomor HP
 async function question(text) {
     process.stdout.write(text)
     const rl = readline.createInterface({
@@ -33,17 +33,19 @@ async function question(text) {
     })
 }
 
+// Hapus session lama jika perlu
 function clearSession() {
     if (fs.existsSync(SESSION_DIR)) {
         const backup = `./session_backup_${Date.now()}`
         fs.renameSync(SESSION_DIR, backup)
-        console.log(chalk.yellow(`[!] Session dibackup ke ${backup}`))
+        console.log(chalk.yellow(`[!] Session lama dibackup ke ${backup}`))
     }
     fs.mkdirSync(SESSION_DIR, { recursive: true })
 }
 
 async function connectToWhatsApp() {
     try {
+        // Jika ada argumen --new, hapus session
         if (process.argv.includes("--new")) {
             clearSession()
         }
@@ -56,7 +58,7 @@ async function connectToWhatsApp() {
         const sock = makeWASocket({
             auth: state,
             version,
-            printQRInTerminal: true,
+            printQRInTerminal: false, // MATIKAN QR – HANYA PAIRING CODE
             logger: pino({ level: "silent" }),
             browser: ["Ubuntu", "Chrome", "20.0.04"],
             syncFullHistory: false,
@@ -67,23 +69,28 @@ async function connectToWhatsApp() {
 
         sock.ev.on("creds.update", saveCreds)
 
+        // =============================================================
+        // PAIRING CODE – TANPA QR, TANPA PERMINTAAN MANUAL
+        // =============================================================
         sock.ev.on("connection.update", async (update) => {
-            const { connection, lastDisconnect, qr } = update
+            const { connection, lastDisconnect, pairingCode } = update
 
-            if (qr) {
-                console.log(chalk.yellow("\n[!] Scan QR Code:"))
-                console.log(chalk.green(qr))
+            // Jika pairing code tersedia, tampilkan
+            if (pairingCode) {
+                console.log(chalk.green(`\n[✓] PAIRING CODE: ${pairingCode}`))
+                console.log(chalk.yellow(`[!] Masukkan kode ini di HP > WhatsApp > Perangkat Tertaut > Tautkan Perangkat`))
+                console.log(chalk.yellow(`[!] Atau buka WhatsApp > Ketuk titik tiga > Perangkat Tertaut > Tautkan Perangkat\n`))
             }
 
             if (connection === "connecting") {
-                console.log(chalk.yellow("Menghubungkan..."))
+                console.log(chalk.yellow("Menghubungkan ke WhatsApp..."))
             }
 
             if (connection === "open") {
-                console.log(chalk.green("\n[✓] Bot ONLINE"))
+                console.log(chalk.green("\n[✓] BOT ONLINE"))
                 console.log(chalk.green(`[✓] User: ${sock.user?.name || sock.user?.id}`))
-                console.log(chalk.green(`[✓] Mode: C2 (Centang 2) - TANPA Centang Biru`))
-                console.log(chalk.green(`[✓] HP bisa dimatikan, bot tetap jalan\n`))
+                console.log(chalk.green(`[✓] Mode: PAIRING CODE ONLY – C2 (Centang 2, TANPA BIRU)`))
+                console.log(chalk.green(`[✓] HP bisa dimatikan, bot tetap jalan 24/7\n`))
                 
                 // Kirim presence online
                 try {
@@ -93,10 +100,10 @@ async function connectToWhatsApp() {
 
             if (connection === "close") {
                 const reason = lastDisconnect?.error?.output?.statusCode
-                console.log(chalk.red(`[!] Disconnect: ${reason}`))
+                console.log(chalk.red(`[!] Koneksi terputus: ${reason}`))
                 
                 if (reason === DisconnectReason.loggedOut) {
-                    console.log(chalk.red("[!] Logout. Jalankan dengan --new"))
+                    console.log(chalk.red("[!] Session logout. Jalankan ulang dengan --new"))
                     return
                 }
                 
@@ -104,9 +111,9 @@ async function connectToWhatsApp() {
             }
         })
 
-        // =========================================================
-        // MESSAGE HANDLER - TANPA READ RECEIPT (TIDAK CENTANG BIRU)
-        // =========================================================
+        // =============================================================
+        // MESSAGE HANDLER – C2 TANPA BIRU (TANPA readMessages)
+        // =============================================================
         sock.ev.on("messages.upsert", async (m) => {
             try {
                 const msg = m.messages[0]
@@ -114,10 +121,7 @@ async function connectToWhatsApp() {
                 if (!msg.message) return
                 if (msg.key.fromMe) return
 
-                // ===================================================
-                // TIDAK ADA readMessages ATAU sendReadReceipt DI SINI
-                // Server WhatsApp OTOMATIS memberi centang 2 (C2)
-                // ===================================================
+                // TIDAK ADA readMessages – otomatis centang 2 dari server
 
                 const body =
                     msg.message?.conversation ||
@@ -138,6 +142,7 @@ async function connectToWhatsApp() {
                     chalk.white(body)
                 )
 
+                // Panggil handler lenwy
                 try {
                     delete require.cache[require.resolve("./lenwy")]
                     require("./lenwy")(sock, m)
@@ -150,7 +155,7 @@ async function connectToWhatsApp() {
             }
         })
 
-        // Keep-alive
+        // Keep-alive setiap 2 menit
         setInterval(() => {
             if (sock && sock.user) {
                 sock.sendPresenceUpdate('available').catch(() => {})
@@ -163,6 +168,7 @@ async function connectToWhatsApp() {
     }
 }
 
+// Anti crash
 process.on("uncaughtException", (err) => {
     console.error("Uncaught Exception:", err)
     setTimeout(() => connectToWhatsApp(), 5000)
@@ -173,6 +179,39 @@ process.on("unhandledRejection", (err) => {
     setTimeout(() => connectToWhatsApp(), 5000)
 })
 
-console.log(chalk.green("=== WhatsApp Bot - C2 ONLY (No Blue Tick) ==="))
-console.log(chalk.yellow("Mode: Centang 2 otomatis, tanpa centang biru\n"))
-connectToWhatsApp()
+// =============================================================
+// EKSEKUSI – PAIRING CODE OTOMATIS
+// =============================================================
+console.log(chalk.green("=== WHATSAPP BOT – PAIRING CODE ONLY ==="))
+console.log(chalk.yellow("Tidak pakai QR, hanya pairing code."))
+console.log(chalk.yellow("Bot akan meminta nomor HP di bawah.\n"))
+
+// Jalankan dan minta nomor
+;(async () => {
+    // Hapus session jika ada argumen --new
+    if (process.argv.includes("--new")) {
+        clearSession()
+    }
+
+    // Minta nomor HP dari terminal
+    const phoneNumber = await question("Masukkan nomor WhatsApp (contoh: 6281234567890): ")
+    
+    // Bersihkan nomor
+    let cleanNumber = phoneNumber.trim()
+    cleanNumber = cleanNumber.replace(/[^0-9]/g, "")
+    if (cleanNumber.startsWith("0")) {
+        cleanNumber = "62" + cleanNumber.substring(1)
+    }
+    if (!cleanNumber.startsWith("62")) {
+        cleanNumber = "62" + cleanNumber
+    }
+    
+    console.log(chalk.cyan(`[!] Menggunakan nomor: ${cleanNumber}`))
+    console.log(chalk.yellow("[!] Meminta pairing code dari WhatsApp...\n"))
+
+    // Simpan nomor ke environment agar bisa dipakai di connectToWhatsApp
+    process.env.PAIRING_PHONE = cleanNumber
+
+    // Jalankan koneksi
+    await connectToWhatsApp()
+})()
