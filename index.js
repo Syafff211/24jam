@@ -1,6 +1,7 @@
 /*
-  PAIRING CODE ONLY – NO QR, NO BLUE TICK
-  Untuk desa – 100% pairing code
+  WHATSAPP BOT – PAIRING CODE UNTUK SEMUA NEGARA
+  Support: +1, +44, +62, +81, +91, +55, +234, dll.
+  Mode: C2 (Centang 2) – TANPA Centang Biru
 */
 
 const {
@@ -18,7 +19,9 @@ const fs = require("fs")
 const SESSION_DIR = "./session"
 const RECONNECT_DELAY = 5000
 
-// Input nomor HP
+// =============================================================
+// INPUT DARI TERMINAL
+// =============================================================
 async function question(text) {
     process.stdout.write(text)
     const rl = readline.createInterface({
@@ -33,7 +36,37 @@ async function question(text) {
     })
 }
 
-// Hapus session lama jika perlu
+// =============================================================
+// BERSIHKAN NOMOR – SUPPORT SEMUA NEGARA
+// =============================================================
+function cleanPhoneNumber(raw) {
+    let cleaned = raw.trim()
+    
+    // Hapus semua spasi, tanda kurung, strip, titik
+    cleaned = cleaned.replace(/[\s\-\(\)\.]/g, "")
+    
+    // Jika diawali +, pertahankan
+    if (cleaned.startsWith("+")) {
+        cleaned = cleaned.substring(1) // ambil angka setelah +
+    }
+    
+    // Hapus semua karakter non-digit (kecuali + sudah dihapus)
+    cleaned = cleaned.replace(/\D/g, "")
+    
+    // Pastikan tidak kosong
+    if (!cleaned || cleaned.length < 8) {
+        throw new Error("Nomor terlalu pendek. Minimal 8 digit termasuk kode negara.")
+    }
+    
+    // Jika tidak diawali kode negara (0-9), tapi kita sudah punya angka
+    // Biarkan apa adanya – user harus memasukkan kode negara
+    
+    return cleaned
+}
+
+// =============================================================
+// HAPUS SESSION LAMA
+// =============================================================
 function clearSession() {
     if (fs.existsSync(SESSION_DIR)) {
         const backup = `./session_backup_${Date.now()}`
@@ -43,9 +76,11 @@ function clearSession() {
     fs.mkdirSync(SESSION_DIR, { recursive: true })
 }
 
-async function connectToWhatsApp() {
+// =============================================================
+// CONNECT KE WHATSAPP
+// =============================================================
+async function connectToWhatsApp(phoneNumber) {
     try {
-        // Jika ada argumen --new, hapus session
         if (process.argv.includes("--new")) {
             clearSession()
         }
@@ -58,7 +93,7 @@ async function connectToWhatsApp() {
         const sock = makeWASocket({
             auth: state,
             version,
-            printQRInTerminal: false, // MATIKAN QR – HANYA PAIRING CODE
+            printQRInTerminal: false, // HANYA PAIRING CODE
             logger: pino({ level: "silent" }),
             browser: ["Ubuntu", "Chrome", "20.0.04"],
             syncFullHistory: false,
@@ -70,16 +105,18 @@ async function connectToWhatsApp() {
         sock.ev.on("creds.update", saveCreds)
 
         // =============================================================
-        // PAIRING CODE – TANPA QR, TANPA PERMINTAAN MANUAL
+        // PAIRING CODE OTOMATIS – UNTUK SEMUA NEGARA
         // =============================================================
+        let pairingRequested = false
+
         sock.ev.on("connection.update", async (update) => {
             const { connection, lastDisconnect, pairingCode } = update
 
-            // Jika pairing code tersedia, tampilkan
+            // Jika pairing code muncul dari event
             if (pairingCode) {
                 console.log(chalk.green(`\n[✓] PAIRING CODE: ${pairingCode}`))
-                console.log(chalk.yellow(`[!] Masukkan kode ini di HP > WhatsApp > Perangkat Tertaut > Tautkan Perangkat`))
-                console.log(chalk.yellow(`[!] Atau buka WhatsApp > Ketuk titik tiga > Perangkat Tertaut > Tautkan Perangkat\n`))
+                console.log(chalk.yellow(`[!] Buka WhatsApp > Perangkat Tertaut > Tautkan Perangkat`))
+                console.log(chalk.yellow(`[!] Masukkan kode: ${pairingCode}\n`))
             }
 
             if (connection === "connecting") {
@@ -87,12 +124,11 @@ async function connectToWhatsApp() {
             }
 
             if (connection === "open") {
-                console.log(chalk.green("\n[✓] BOT ONLINE"))
-                console.log(chalk.green(`[✓] User: ${sock.user?.name || sock.user?.id}`))
-                console.log(chalk.green(`[✓] Mode: PAIRING CODE ONLY – C2 (Centang 2, TANPA BIRU)`))
-                console.log(chalk.green(`[✓] HP bisa dimatikan, bot tetap jalan 24/7\n`))
+                console.log(chalk.green(`\n[✓] BOT ONLINE – ${sock.user?.name || sock.user?.id}`))
+                console.log(chalk.green(`[✓] Support semua negara – kode negara apapun`))
+                console.log(chalk.green(`[✓] Mode: C2 (Centang 2) – TANPA Centang Biru`))
+                console.log(chalk.green(`[✓] HP bisa dimatikan, bot jalan 24/7\n`))
                 
-                // Kirim presence online
                 try {
                     await sock.sendPresenceUpdate('available')
                 } catch (e) {}
@@ -103,16 +139,43 @@ async function connectToWhatsApp() {
                 console.log(chalk.red(`[!] Koneksi terputus: ${reason}`))
                 
                 if (reason === DisconnectReason.loggedOut) {
-                    console.log(chalk.red("[!] Session logout. Jalankan ulang dengan --new"))
+                    console.log(chalk.red("[!] Logout. Jalankan ulang dengan --new"))
                     return
                 }
                 
-                setTimeout(() => connectToWhatsApp(), RECONNECT_DELAY)
+                setTimeout(() => connectToWhatsApp(phoneNumber), RECONNECT_DELAY)
             }
         })
 
         // =============================================================
-        // MESSAGE HANDLER – C2 TANPA BIRU (TANPA readMessages)
+        // REQUEST PAIRING CODE – MANUAL DENGAN NOMOR DARI INPUT
+        // =============================================================
+        sock.ev.on("connection.update", async (update) => {
+            // Saat koneksi mulai, dan belum registered, minta pairing
+            if (update.connection === "connecting" && !sock.authState.creds.registered && !pairingRequested) {
+                pairingRequested = true
+                
+                try {
+                    console.log(chalk.cyan(`[!] Meminta pairing code untuk nomor: ${phoneNumber}`))
+                    
+                    // Request pairing code
+                    const code = await sock.requestPairingCode(phoneNumber)
+                    
+                    console.log(chalk.green(`\n[✓] PAIRING CODE: ${code}`))
+                    console.log(chalk.yellow(`[!] Masukkan kode ${code} di HP WhatsApp > Perangkat Tertaut > Tautkan Perangkat`))
+                    console.log(chalk.yellow(`[!] Jika tidak muncul, coba ketik manual di HP.\n`))
+                    
+                } catch (err) {
+                    console.error(chalk.red(`[!] Gagal request pairing: ${err.message}`))
+                    console.log(chalk.yellow("[!] Pastikan nomor benar dan koneksi internet stabil."))
+                    console.log(chalk.yellow("[!] Coba jalankan ulang dengan nomor yang benar."))
+                    pairingRequested = false
+                }
+            }
+        })
+
+        // =============================================================
+        // MESSAGE HANDLER – C2 TANPA BIRU
         // =============================================================
         sock.ev.on("messages.upsert", async (m) => {
             try {
@@ -121,7 +184,7 @@ async function connectToWhatsApp() {
                 if (!msg.message) return
                 if (msg.key.fromMe) return
 
-                // TIDAK ADA readMessages – otomatis centang 2 dari server
+                // TIDAK ADA readMessages – centang 2 otomatis dari server
 
                 const body =
                     msg.message?.conversation ||
@@ -142,7 +205,6 @@ async function connectToWhatsApp() {
                     chalk.white(body)
                 )
 
-                // Panggil handler lenwy
                 try {
                     delete require.cache[require.resolve("./lenwy")]
                     require("./lenwy")(sock, m)
@@ -155,7 +217,7 @@ async function connectToWhatsApp() {
             }
         })
 
-        // Keep-alive setiap 2 menit
+        // Keep-alive
         setInterval(() => {
             if (sock && sock.user) {
                 sock.sendPresenceUpdate('available').catch(() => {})
@@ -164,54 +226,63 @@ async function connectToWhatsApp() {
 
     } catch (err) {
         console.error("Main Error:", err)
-        setTimeout(() => connectToWhatsApp(), RECONNECT_DELAY)
+        setTimeout(() => connectToWhatsApp(phoneNumber), RECONNECT_DELAY)
     }
 }
 
-// Anti crash
+// =============================================================
+// ANTI CRASH
+// =============================================================
 process.on("uncaughtException", (err) => {
     console.error("Uncaught Exception:", err)
-    setTimeout(() => connectToWhatsApp(), 5000)
+    setTimeout(() => {
+        const phone = process.env.LAST_PHONE || "6281234567890"
+        connectToWhatsApp(phone)
+    }, 5000)
 })
 
 process.on("unhandledRejection", (err) => {
     console.error("Unhandled Rejection:", err)
-    setTimeout(() => connectToWhatsApp(), 5000)
+    setTimeout(() => {
+        const phone = process.env.LAST_PHONE || "6281234567890"
+        connectToWhatsApp(phone)
+    }, 5000)
 })
 
 // =============================================================
-// EKSEKUSI – PAIRING CODE OTOMATIS
+// MAIN – EKSEKUSI
 // =============================================================
-console.log(chalk.green("=== WHATSAPP BOT – PAIRING CODE ONLY ==="))
-console.log(chalk.yellow("Tidak pakai QR, hanya pairing code."))
-console.log(chalk.yellow("Bot akan meminta nomor HP di bawah.\n"))
+console.log(chalk.green("=== WHATSAPP BOT – PAIRING CODE UNTUK SEMUA NEGARA ==="))
+console.log(chalk.yellow("Support: +1 (US), +44 (UK), +62 (Indonesia), +81 (Jepang), dll."))
+console.log(chalk.yellow("Format: kode negara + nomor, contoh: 6281234567890 atau 447912345678\n"))
 
-// Jalankan dan minta nomor
 ;(async () => {
-    // Hapus session jika ada argumen --new
+    // Hapus session jika argumen --new
     if (process.argv.includes("--new")) {
         clearSession()
     }
 
-    // Minta nomor HP dari terminal
-    const phoneNumber = await question("Masukkan nomor WhatsApp (contoh: 6281234567890): ")
+    // Minta nomor HP
+    const rawNumber = await question("Masukkan nomor WhatsApp (dengan kode negara, tanpa +): ")
     
-    // Bersihkan nomor
-    let cleanNumber = phoneNumber.trim()
-    cleanNumber = cleanNumber.replace(/[^0-9]/g, "")
-    if (cleanNumber.startsWith("0")) {
-        cleanNumber = "62" + cleanNumber.substring(1)
+    let phoneNumber
+    try {
+        phoneNumber = cleanPhoneNumber(rawNumber)
+        console.log(chalk.cyan(`[!] Nomor terdeteksi: ${phoneNumber}`))
+        console.log(chalk.cyan(`[!] Kode negara: ${phoneNumber.substring(0, phoneNumber.length - 10)}...`))
+    } catch (err) {
+        console.log(chalk.red(`[!] Error: ${err.message}`))
+        console.log(chalk.yellow("[!] Contoh format yang benar:"))
+        console.log(chalk.yellow("  - Indonesia: 6281234567890"))
+        console.log(chalk.yellow("  - US: 14151234567"))
+        console.log(chalk.yellow("  - UK: 447912345678"))
+        console.log(chalk.yellow("  - Jepang: 819012345678"))
+        process.exit(1)
     }
-    if (!cleanNumber.startsWith("62")) {
-        cleanNumber = "62" + cleanNumber
-    }
-    
-    console.log(chalk.cyan(`[!] Menggunakan nomor: ${cleanNumber}`))
-    console.log(chalk.yellow("[!] Meminta pairing code dari WhatsApp...\n"))
 
-    // Simpan nomor ke environment agar bisa dipakai di connectToWhatsApp
-    process.env.PAIRING_PHONE = cleanNumber
+    // Simpan untuk auto-reconnect
+    process.env.LAST_PHONE = phoneNumber
 
-    // Jalankan koneksi
-    await connectToWhatsApp()
+    // Jalankan bot
+    await connectToWhatsApp(phoneNumber)
 })()
